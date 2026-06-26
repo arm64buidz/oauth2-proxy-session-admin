@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Session Manager</title>
+<style>
+  /* ── Theme variables ─────────────────────────────────────────────────── */
+  :root,
+  :root[data-theme="dark"] {
+    --bg-base:          #0f1117;
+    --bg-surface:       #1a1f2e;
+    --bg-elevated:      #1e2433;
+    --border-subtle:    #131720;
+    --border-base:      #252d40;
+    --border-strong:    #334155;
+    --text-primary:     #e2e8f0;
+    --text-secondary:   #94a3b8;
+    --text-muted:       #64748b;
+    --text-faint:       #475569;
+    --ttl-bg:           #1e2433;
+    --dest-rule:        #252d40;
+    --note-hover-bg:    #1e2433;
+    --badge-active-bg:  #1a2e1a;  --badge-active-fg:   #86efac;
+    --badge-blocked-bg: #3d1a1a;  --badge-blocked-fg:  #fca5a5;
+    --btn-n-bg:  #1e2433; --btn-n-border: #334155; --btn-n-fg: #94a3b8;
+    --btn-u-bg:  #1a2e1a; --btn-u-border: #166534; --btn-u-fg: #86efac;
+    --btn-r-bg:  #3d1a1a; --btn-r-border: #7f1d1d; --btn-r-fg: #fca5a5;
+    --btn-c-bg:  #7f1d1d; --btn-c-border: #ef4444; --btn-c-fg: #fca5a5;
+    --error-bg:  #3d1a1a; --error-border: #7f1d1d; --error-fg: #fca5a5;
+  }
+
+  /* Auto: follows OS preference */
+  @media (prefers-color-scheme: light) {
+    :root[data-theme="auto"] {
+      --bg-base:          #f1f5f9;
+      --bg-surface:       #ffffff;
+      --bg-elevated:      #f8fafc;
+      --border-subtle:    #e9eef5;
+      --border-base:      #cbd5e1;
+      --border-strong:    #94a3b8;
+      --text-primary:     #0f172a;
+      --text-secondary:   #334155;
+      --text-muted:       #64748b;
+      --text-faint:       #94a3b8;
+      --ttl-bg:           #e2e8f0;
+      --dest-rule:        #cbd5e1;
+      --note-hover-bg:    #f1f5f9;
+      --badge-active-bg:  #dcfce7;  --badge-active-fg:   #166534;
+      --badge-blocked-bg: #fee2e2;  --badge-blocked-fg:  #991b1b;
+      --btn-n-bg:  #f1f5f9; --btn-n-border: #cbd5e1; --btn-n-fg: #475569;
+      --btn-u-bg:  #dcfce7; --btn-u-border: #86efac; --btn-u-fg: #166534;
+      --btn-r-bg:  #fee2e2; --btn-r-border: #fca5a5; --btn-r-fg: #991b1b;
+      --btn-c-bg:  #fca5a5; --btn-c-border: #ef4444; --btn-c-fg: #7f1d1d;
+      --error-bg:  #fee2e2; --error-border: #fca5a5; --error-fg: #991b1b;
+    }
+  }
+
+  /* Explicit light mode */
+  :root[data-theme="light"] {
+    --bg-base:          #f1f5f9;
+    --bg-surface:       #ffffff;
+    --bg-elevated:      #f8fafc;
+    --border-subtle:    #e9eef5;
+    --border-base:      #cbd5e1;
+    --border-strong:    #94a3b8;
+    --text-primary:     #0f172a;
+    --text-secondary:   #334155;
+    --text-muted:       #64748b;
+    --text-faint:       #94a3b8;
+    --ttl-bg:           #e2e8f0;
+    --dest-rule:        #cbd5e1;
+    --note-hover-bg:    #f1f5f9;
+    --badge-active-bg:  #dcfce7;  --badge-active-fg:   #166534;
+    --badge-blocked-bg: #fee2e2;  --badge-blocked-fg:  #991b1b;
+    --btn-n-bg:  #f1f5f9; --btn-n-border: #cbd5e1; --btn-n-fg: #475569;
+    --btn-u-bg:  #dcfce7; --btn-u-border: #86efac; --btn-u-fg: #166534;
+    --btn-r-bg:  #fee2e2; --btn-r-border: #fca5a5; --btn-r-fg: #991b1b;
+    --btn-c-bg:  #fca5a5; --btn-c-border: #ef4444; --btn-c-fg: #7f1d1d;
+    --error-bg:  #fee2e2; --error-border: #fca5a5; --error-fg: #991b1b;
+  }
+
+  /* ── Reset ───────────────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg-base); color: var(--text-primary);
+    font-family: system-ui, sans-serif; font-size: 14px; min-height: 100vh;
+    transition: background 0.2s, color 0.2s;
+  }
+
+  /* ── Header ──────────────────────────────────────────────────────────── */
+  #header {
+    background: var(--bg-surface); border-bottom: 1px solid var(--border-base);
+    height: 56px; display: flex; align-items: center;
+    justify-content: space-between; padding: 0 28px;
+  }
+  #header-left  { display: flex; align-items: center; gap: 10px; }
+  #header-right { display: flex; align-items: center; gap: 8px; }
+
+  #status-dot { width: 8px; height: 8px; border-radius: 50%; background: #f59e0b; box-shadow: 0 0 6px #f59e0b; transition: background 0.3s, box-shadow 0.3s; }
+  #status-dot.ok  { background: #10b981; box-shadow: 0 0 6px #10b981; }
+  #status-dot.err { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
+  #title    { font-weight: 700; font-size: 15px; }
+  #subtitle { color: var(--text-muted); font-size: 12px; margin-top: 1px; }
+
+  .hdr-btn {
+    background: transparent; border: 1px solid var(--border-strong);
+    color: var(--text-secondary); padding: 6px 14px; border-radius: 4px;
+    cursor: pointer; font-size: 12px;
+  }
+  .hdr-btn:hover { border-color: var(--text-muted); color: var(--text-primary); }
+
+  /* ── Main ────────────────────────────────────────────────────────────── */
+  #main { padding: 28px; }
+
+  /* ── Stats ───────────────────────────────────────────────────────────── */
+  #stats { display: flex; gap: 12px; margin-bottom: 24px; }
+  .stat-card  { background: var(--bg-surface); border: 1px solid var(--border-base); padding: 18px 24px; flex: 1; }
+  .stat-label { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; }
+  .stat-value { font-family: monospace; font-size: 28px; font-weight: 700; color: var(--text-primary); }
+  .stat-value.accent { color: #e07b39; }
+  .stat-value.danger { color: #ef4444; }
+
+  /* ── Error bar ───────────────────────────────────────────────────────── */
+  #error-bar {
+    background: var(--error-bg); border: 1px solid var(--error-border); color: var(--error-fg);
+    padding: 12px 16px; border-radius: 4px; margin-bottom: 20px; font-size: 13px; display: none;
+  }
+
+  /* ── Table ───────────────────────────────────────────────────────────── */
+  #table-wrap { background: var(--bg-surface); border: 1px solid var(--border-base); overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left; padding: 10px 16px; color: var(--text-faint);
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    border-bottom: 1px solid var(--border-base); font-weight: 500; white-space: nowrap;
+  }
+  td { padding: 13px 16px; border-bottom: 1px solid var(--border-subtle); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr.busy { opacity: 0.5; pointer-events: none; }
+
+  .email  { font-weight: 500; }
+  .userid { font-family: monospace; font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .since  { font-size: 11px; color: var(--text-faint); margin-top: 3px; }
+  .mono   { font-family: monospace; font-size: 12px; color: var(--text-secondary); }
+  .muted  { color: var(--text-faint); font-style: italic; font-size: 12px; }
+  .referer { color: var(--text-muted); font-size: 12px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ── Destination accordion ───────────────────────────────────────────── */
+  details { width: 100%; max-width: 220px; }
+  summary { cursor: pointer; outline: none; list-style: none; display: flex; align-items: center; gap: 4px; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: '▼'; font-size: 9px; color: var(--text-faint); margin-left: auto; transition: transform 0.2s; }
+  details[open] summary::after { transform: rotate(180deg); }
+  .dest-list { margin-top: 6px; padding-left: 8px; border-left: 2px solid var(--dest-rule); display: flex; flex-direction: column; gap: 6px; }
+  .dest-item { display: flex; flex-direction: column; }
+  .dest-name { color: var(--text-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+  .dest-time { color: var(--text-faint); font-size: 10px; margin-top: 1px; font-family: monospace; }
+  .dest-badge {
+    background: var(--ttl-bg); color: var(--text-secondary);
+    font-size: 10px; padding: 1px 5px; border-radius: 3px;
+    font-family: monospace; margin-left: 4px; flex-shrink: 0;
+  }
+
+  /* ── TTL bar ─────────────────────────────────────────────────────────── */
+  .ttl-label { font-family: monospace; font-size: 11px; background: var(--ttl-bg); color: var(--text-secondary); padding: 2px 7px; border-radius: 3px; display: inline-block; margin-bottom: 5px; }
+  .ttl-track { background: var(--ttl-bg); border-radius: 2px; height: 4px; width: 100%; min-width: 80px; }
+  .ttl-bar   { height: 100%; border-radius: 2px; transition: width 0.3s; }
+
+  /* ── Status badge ────────────────────────────────────────────────────── */
+  .badge-active  { background: var(--badge-active-bg);  color: var(--badge-active-fg);  font-size: 11px; padding: 2px 8px; border-radius: 3px; }
+  .badge-blocked { background: var(--badge-blocked-bg); color: var(--badge-blocked-fg); font-size: 11px; padding: 2px 8px; border-radius: 3px; }
+
+  /* ── Action buttons ──────────────────────────────────────────────────── */
+  .actions     { display: flex; gap: 6px; align-items: center; }
+  .btn-block   { background: var(--btn-n-bg); border: 1px solid var(--btn-n-border); color: var(--btn-n-fg); padding: 4px 12px; border-radius: 3px; cursor: pointer; font-size: 12px; }
+  .btn-block:hover { border-color: var(--border-strong); color: var(--text-primary); }
+  .btn-unblock { background: var(--btn-u-bg); border: 1px solid var(--btn-u-border); color: var(--btn-u-fg); padding: 4px 12px; border-radius: 3px; cursor: pointer; font-size: 12px; }
+  .btn-revoke  { background: var(--btn-r-bg); border: 1px solid var(--btn-r-border); color: var(--btn-r-fg); padding: 4px 12px; border-radius: 3px; cursor: pointer; font-size: 12px; }
+  .btn-confirm { background: var(--btn-c-bg); border: 1px solid var(--btn-c-border); color: var(--btn-c-fg); padding: 4px 12px; border-radius: 3px; cursor: pointer; font-size: 12px; }
+  .btn-cancel  { background: transparent; border: 1px solid var(--border-strong); color: var(--text-secondary); padding: 4px 12px; border-radius: 3px; cursor: pointer; font-size: 12px; }
+  .working-text { color: var(--text-muted); font-size: 12px; }
+
+  /* ── Note cell ───────────────────────────────────────────────────────── */
+  .note-display {
+    display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+    padding: 4px 6px; margin: -4px -6px; border-radius: 3px; min-width: 64px;
+    transition: background 0.15s;
+  }
+  .note-display:hover { background: var(--note-hover-bg); }
+  .note-text-val   { color: var(--text-secondary); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 140px; }
+  .note-placeholder { color: var(--text-faint); font-style: italic; font-size: 12px; }
+  .note-pencil {
+    opacity: 0; font-size: 11px; color: var(--text-muted);
+    flex-shrink: 0; transition: opacity 0.15s; line-height: 1;
+  }
+  .note-display:hover .note-pencil { opacity: 1; }
+  .note-input {
+    background: var(--bg-base); border: 1px solid var(--border-strong);
+    color: var(--text-primary); padding: 4px 8px; border-radius: 3px;
+    width: 160px; font-size: 12px; font-family: inherit; outline: none;
+  }
+  .note-input:focus { border-color: #e07b39; box-shadow: 0 0 0 2px rgba(224,123,57,0.15); }
+
+  /* ── Empty / footer ──────────────────────────────────────────────────── */
+  #empty  { text-align: center; color: var(--text-faint); padding: 48px; }
+  #footer { margin-top: 14px; color: var(--text-faint); font-size: 12px; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div id="header-left">
+    <div id="status-dot"></div>
+    <div>
+      <div id="title">Session Manager</div>
+      <div id="subtitle">Connecting…</div>
+    </div>
+  </div>
+  <div id="header-right">
+    <button id="theme-btn" class="hdr-btn" onclick="cycleTheme()">Auto</button>
+    <button id="refresh-btn" class="hdr-btn" onclick="loadData()">↻ Refresh</button>
+  </div>
+</div>
+
+<div id="main">
+  <div id="stats">
+    <div class="stat-card"><div class="stat-label">Redis Tickets</div><div class="stat-value" id="stat-tickets">—</div></div>
+    <div class="stat-card"><div class="stat-label">Known Users</div><div class="stat-value accent" id="stat-users">—</div></div>
+    <div class="stat-card"><div class="stat-label">Blocked</div><div class="stat-value" id="stat-blocked">—</div></div>
+    <div class="stat-card"><div class="stat-label">Orphaned Meta</div><div class="stat-value" id="stat-orphaned">—</div></div>
+  </div>
+
+  <div id="error-bar"></div>
+
+  <div id="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>User / Email</th>
+          <th>Device / IP</th>
+          <th>Destinations</th>
+          <th>Note</th>
+          <th>Expires</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="tbody">
+        <tr><td colspan="7" id="empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div id="footer">Auto-refreshes every 30s · Block prevents access immediately · Revoke deletes session + metadata</div>
+</div>
+
+<script>
+  const MAX_TTL = 604800;
+  let sessions     = [];
+  let confirmState = null;
+  let workingId    = null;
+  let editingNotes = new Set();   // handles whose note cell is in edit mode
+
+  /* ── Theme ──────────────────────────────────────────────────────────── */
+  const THEMES       = ['auto', 'dark', 'light'];
+  const THEME_LABELS = { auto: 'Auto', dark: '☾ Dark', light: '☀ Light' };
+
+  function getTheme()  { return localStorage.getItem('sm-theme') || 'auto'; }
+
+  function setTheme(t) {
+    localStorage.setItem('sm-theme', t);
+    document.documentElement.dataset.theme = t;
+    document.getElementById('theme-btn').textContent = THEME_LABELS[t];
+  }
+
+  function cycleTheme() {
+    setTheme(THEMES[(THEMES.indexOf(getTheme()) + 1) % THEMES.length]);
+  }
+
+  /* ── Utilities ──────────────────────────────────────────────────────── */
+  function esc(str) {
+    return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function setStatus(s)   { document.getElementById('status-dot').className = s; }
+  function setSubtitle(t) { document.getElementById('subtitle').textContent = t; }
+  function showError(msg) {
+    const b = document.getElementById('error-bar');
+    b.textContent = msg; b.style.display = msg ? 'block' : 'none';
+  }
+
+  function fmtTime(iso) { return iso ? new Date(iso).toLocaleString() : '—'; }
+
+  function relTime(iso) {
+    if (!iso) return '—';
+    const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+    if (s <   60) return `${s}s ago`;
+    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+    return `${Math.floor(s / 86400)}d ago`;
+  }
+
+  function ttlColor(pct) {
+    if (pct > 50) return '#10b981';
+    if (pct > 20) return '#f59e0b';
+    return '#ef4444';
+  }
+
+  /* ── Stats ──────────────────────────────────────────────────────────── */
+  function renderStats(stats) {
+    document.getElementById('stat-tickets').textContent  = stats.total_tickets  ?? '—';
+    document.getElementById('stat-users').textContent    = stats.known_users    ?? '—';
+    document.getElementById('stat-orphaned').textContent = stats.orphaned_meta  ?? '—';
+    const el = document.getElementById('stat-blocked');
+    el.textContent = stats.blocked_users ?? '—';
+    el.className   = 'stat-value' + (stats.blocked_users > 0 ? ' danger' : '');
+  }
+
+  /* ── Note editing ───────────────────────────────────────────────────── */
+  function startNoteEdit(handle) {
+    editingNotes.add(handle);
+    renderTable();
+    // renderTable is synchronous; focus after browser paint
+    setTimeout(() => {
+      const el = document.getElementById(`note-input-${handle}`);
+      if (el) { el.focus(); el.select(); }
+    }, 0);
+  }
+
+  async function commitNote(handle, value) {
+    editingNotes.delete(handle);
+    // Optimistic local update so the text shows immediately
+    sessions = sessions.map(s => s.handle === handle ? { ...s, note: value } : s);
+    renderTable();
+    try {
+      await fetch(`/api/sessions/${encodeURIComponent(handle)}/note`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note: value }),
+      });
+    } catch (e) { showError('Failed to save note'); }
+  }
+
+  /* ── Actions ────────────────────────────────────────────────────────── */
+  function renderActions(s) {
+    if (workingId === s.handle) return '<span class="working-text">Working…</span>';
+
+    if (confirmState && confirmState.userId === s.handle) {
+      const label = confirmState.action === 'revoke' ? 'Confirm revoke' : 'Confirm block';
+      return `<div class="actions">
+        <button class="btn-confirm" onclick="doConfirm('${s.handle}')">${label}</button>
+        <button class="btn-cancel"  onclick="cancelConfirm()">Cancel</button>
+      </div>`;
+    }
+
+    const blockBtn = s.blocked
+      ? `<button class="btn-unblock" onclick="doUnblock('${s.handle}')">Unblock</button>`
+      : `<button class="btn-block"   onclick="askConfirm('${s.handle}','block')">Block</button>`;
+
+    return `<div class="actions">
+      ${blockBtn}
+      <button class="btn-revoke" onclick="askConfirm('${s.handle}','revoke')">Revoke</button>
+    </div>`;
+  }
+
+  /* ── Table ──────────────────────────────────────────────────────────── */
+  function renderTable() {
+    const tbody = document.getElementById('tbody');
+
+    // ① Remember which <details> accordions were open so we can restore them
+    const openHandles = new Set(
+      [...document.querySelectorAll('details[data-handle]')]
+        .filter(el => el.open)
+        .map(el => el.dataset.handle)
+    );
+
+    // ② If a note input had keyboard focus, remember it so we can restore it
+    const activeEl      = document.activeElement;
+    const focusedHandle = activeEl?.id?.startsWith('note-input-')
+      ? activeEl.id.slice('note-input-'.length) : null;
+
+    if (sessions.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" id="empty">No sessions yet. Users appear here after their first authenticated request.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = sessions.map(s => {
+      const pct      = Math.max(0, Math.min(100, (s.ttl_seconds / MAX_TTL) * 100));
+      const barColor = ttlColor(pct);
+      const busy     = workingId === s.handle ? ' class="busy"' : '';
+      const shortId  = s.handle.length > 20 ? s.handle.slice(0, 20) + '…' : s.handle;
+
+      /* ── Destinations cell ─────────────────────────────────────────── */
+      const dests = s.destinations || [];
+      let destHtml;
+
+      if (dests.length === 0) {
+        // Backwards-compat fallback for sessions recorded before this update
+        const fallback = s.destination;
+        destHtml = fallback
+          ? `<div class="referer" title="${esc(fallback)}">${esc(fallback)}</div>`
+          : '<span class="muted">—</span>';
+
+      } else if (dests.length === 1) {
+        destHtml = `
+          <div class="referer" title="${esc(dests[0].destination)}">${esc(dests[0].destination)}</div>
+          <div class="dest-time" style="margin-top:3px;" title="${fmtTime(dests[0].last_seen)}">${relTime(dests[0].last_seen)}</div>`;
+
+      } else {
+        const primary = dests[0];
+        const rest    = dests.slice(1).map(d => `
+          <div class="dest-item">
+            <span class="dest-name" title="${esc(d.destination)}">↳ ${esc(d.destination)}</span>
+            <span class="dest-time" title="${fmtTime(d.last_seen)}">${relTime(d.last_seen)}</span>
+          </div>`).join('');
+
+        destHtml = `
+          <details data-handle="${esc(s.handle)}">
+            <summary>
+              <div class="referer" title="${esc(primary.destination)}">${esc(primary.destination)}</div>
+              <span class="dest-badge">+${dests.length - 1}</span>
+            </summary>
+            <div class="dest-list">
+              <div class="dest-item" style="border-bottom:1px dashed var(--dest-rule);padding-bottom:4px;margin-bottom:2px;">
+                <span class="dest-name" style="color:var(--text-secondary);" title="${esc(primary.destination)}">↳ ${esc(primary.destination)}</span>
+                <span class="dest-time" title="${fmtTime(primary.last_seen)}">${relTime(primary.last_seen)}</span>
+              </div>
+              ${rest}
+            </div>
+          </details>`;
+      }
+
+      /* ── Note cell ─────────────────────────────────────────────────── */
+      let noteCell;
+      if (editingNotes.has(s.handle)) {
+        noteCell = `<input
+          id="note-input-${s.handle}"
+          type="text"
+          value="${esc(s.note || '')}"
+          class="note-input"
+          placeholder="Add note…"
+          onblur="commitNote('${s.handle}', this.value)"
+          onkeydown="if(event.key==='Enter')this.blur();
+                     if(event.key==='Escape'){editingNotes.delete('${s.handle}');renderTable();}">`;
+      } else {
+        noteCell = `<div class="note-display" onclick="startNoteEdit('${s.handle}')">
+          ${s.note
+            ? `<span class="note-text-val" title="${esc(s.note)}">${esc(s.note)}</span>`
+            : `<span class="note-placeholder">Add note…</span>`}
+          <span class="note-pencil">✎</span>
+        </div>`;
+      }
+
+      return `<tr${busy}>
+        <td>
+          <div class="email">${esc(s.email || '')}<span class="${s.email ? '' : 'muted'}">${s.email ? '' : 'no email'}</span></div>
+          <div class="userid" title="${esc(s.handle)}">${esc(shortId)}</div>
+          <div class="since"  title="${fmtTime(s.last_seen)}">Last seen: ${relTime(s.last_seen)}</div>
+        </td>
+        <td>
+          <div style="font-size:12px;font-weight:500;color:var(--text-primary);">${esc(s.device || 'Unknown')}</div>
+          <div class="mono" style="font-size:11px;color:var(--text-muted);">${esc(s.ip || '—')}</div>
+        </td>
+        <td>${destHtml}</td>
+        <td>${noteCell}</td>
+        <td>
+          <div class="ttl-label">${esc(s.expires_in)}</div>
+          <div class="ttl-track"><div class="ttl-bar" style="width:${pct}%;background:${barColor}"></div></div>
+        </td>
+        <td>${s.blocked ? '<span class="badge-blocked">BLOCKED</span>' : '<span class="badge-active">ACTIVE</span>'}</td>
+        <td>${renderActions(s)}</td>
+      </tr>`;
+    }).join('');
+
+    // ③ Restore accordion open states
+    openHandles.forEach(h => {
+      const el = document.querySelector(`details[data-handle="${h}"]`);
+      if (el) el.open = true;
+    });
+
+    // ④ Restore keyboard focus to a note input if it was active before re-render
+    if (focusedHandle && editingNotes.has(focusedHandle)) {
+      const el = document.getElementById(`note-input-${focusedHandle}`);
+      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+    }
+  }
+
+  /* ── Data loading ───────────────────────────────────────────────────── */
+  async function loadData() {
+    document.getElementById('refresh-btn').textContent = 'Refreshing…';
+    try {
+      const [sessRes, statsRes] = await Promise.all([
+        fetch('/api/sessions'),
+        fetch('/api/stats'),
+      ]);
+      if (!sessRes.ok || !statsRes.ok) throw new Error(`API error ${sessRes.status}`);
+      const [sessData, statsData] = await Promise.all([sessRes.json(), statsRes.json()]);
+      sessions = sessData;
+      renderStats(statsData);
+      // Don't clobber an active note edit — the table re-renders when the user commits
+      const ae = document.activeElement;
+      if (!ae?.id?.startsWith('note-input-')) {
+        renderTable();
+      }
+      setStatus('ok');
+      setSubtitle(`Refreshed ${new Date().toLocaleTimeString()}`);
+      showError('');
+    } catch (e) {
+      setStatus('err');
+      showError(`Error: ${e.message}`);
+      setSubtitle('Failed to load');
+    } finally {
+      document.getElementById('refresh-btn').textContent = '↻ Refresh';
+    }
+  }
+
+  /* ── Confirm / block / revoke ───────────────────────────────────────── */
+  function askConfirm(userId, action) { confirmState = { userId, action }; renderTable(); }
+  function cancelConfirm()            { confirmState = null; renderTable(); }
+
+  async function doConfirm(userId) {
+    if (!confirmState) return;
+    confirmState.action === 'revoke' ? await doRevoke(userId) : await doBlock(userId);
+  }
+
+  async function doBlock(userId) {
+    workingId = userId; confirmState = null; renderTable();
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(userId)}/block`, { method: 'POST' });
+      if (!res.ok) throw new Error(await res.text());
+      sessions = sessions.map(s => s.handle === userId ? { ...s, blocked: true } : s);
+    } catch (e) { showError(e.message); }
+    workingId = null; renderTable(); loadData();
+  }
+
+  async function doUnblock(userId) {
+    workingId = userId; renderTable();
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(userId)}/block`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(await res.text());
+      sessions = sessions.map(s => s.handle === userId ? { ...s, blocked: false } : s);
+    } catch (e) { showError(e.message); }
+    workingId = null; renderTable(); loadData();
+  }
+
+  async function doRevoke(handle) {
+    workingId = handle; confirmState = null; renderTable();
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(handle)}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(await res.text());
+      sessions = sessions.filter(s => s.handle !== handle);
+    } catch (e) { showError(e.message); }
+    workingId = null; renderTable(); loadData();
+  }
+
+  /* ── Boot ───────────────────────────────────────────────────────────── */
+  setTheme(getTheme());   // apply saved theme before first paint
+  loadData();
+  setInterval(loadData, 30000);
+</script>
+</body>
+</html>
