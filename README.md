@@ -6,6 +6,12 @@ A lightweight FastAPI service that provides a **web UI and REST API for managing
 
 ---
 
+## Dashboard
+
+![Session Manager dashboard showing active sessions with user details, device info, expiry timers, and block/revoke controls](screenshot.png)
+
+---
+
 ## How It Works
 
 The session admin UI is exposed on the same `auth.` subdomain as the rest of the stack — protected by both oauth2-proxy authentication and an `administrator` group check via authz.
