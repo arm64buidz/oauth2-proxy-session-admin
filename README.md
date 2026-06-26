@@ -1,211 +1,127 @@
 # oauth2-proxy-session-admin
 
-A lightweight FastAPI service that provides a **web UI and REST API for managing oauth2-proxy sessions** stored in Redis.
+A lightweight FastAPI service that provides a **web UI and REST API for managing oauth2-proxy sessions** stored in Redis. Designed to work alongside [oauth2-proxy-authz](https://github.com/arm64buidz/oauth2-proxy-authz), [Pocket ID](https://github.com/pocket-id/pocket-id), and oauth2-proxy as part of a self-hosted SSO stack.
 
-Designed to work alongside [oauth2-proxy-authz](https://github.com/arm64buidz/oauth2-proxy-authz), [Pocket-ID](https://github.com/pocket-id/pocket-id), and oauth2-proxy as part of a self-hosted SSO stack.
-
----
-
-## Dashboard
-
-![Session Manager dashboard showing active sessions with user details, device info, expiry timers, and block/revoke controls](screenshot.png)
-
-## What it does
-
-oauth2-proxy stores session tokens in Redis but provides no built-in visibility into who is currently logged in or any way to revoke a session without flushing all of Redis. This service fills that gap.
-
-It pairs with `oauth2-proxy-authz`, which writes rich session metadata (user, email, IP, browser, last-seen service) to Redis on every authorized request. This service reads that metadata and exposes it through a protected admin dashboard.
-
-From the dashboard, an administrator can:
-
-- See all active sessions with user details, IP, device, expiry, and which services they've accessed
-- **Revoke a session** — deletes the session ticket from Redis, logging the user out immediately
-- **Block a user** — adds the user's ID to a Redis blocklist, causing `authz` to return `403` on their next request (within 5 seconds, due to the blocklist cache TTL)
-- **Unblock a user** — removes them from the blocklist
-- **Add a note** to a session for administrative reference
+> **Dependency:** This container requires [oauth2-proxy-authz](https://github.com/arm64buidz/oauth2-proxy-authz) to be running first. It reads from the same Redis instance and will not function without it.
 
 ---
 
-## Architecture overview
+## How It Works
+
+The session admin UI is exposed on the same `auth.` subdomain as the rest of the stack — protected by both oauth2-proxy authentication and an `administrator` group check via authz.
 
 ```
-Browser (admin user)
-  │
-  ▼
-Traefik ──► oauth2-auth middleware   (must be authenticated)
-         ──► authz-group-admin       (must be in 'administrator' group)
-  │
-  ▼
-session-admin :8080
-  │
-  ├── GET  /admin-portal             → serves the web UI
-  ├── GET  /api/sessions             → list all active sessions
-  ├── GET  /api/stats                → aggregate stats
-  ├── DELETE /api/sessions/{handle}  → revoke a session
-  ├── POST   /api/sessions/{handle}/block    → block a user
-  ├── DELETE /api/sessions/{handle}/block    → unblock a user
-  └── POST   /api/sessions/{handle}/note     → set a note
+Browser → auth.example.duckdns.org/admin-portal
+              └─▶ Traefik
+                    ├─▶ oauth2-auth (must be logged in)
+                    ├─▶ authz-group-admin (must be in 'administrator' group)
+                    └─▶ session-admin:8080
 ```
 
-The admin portal itself is protected by Traefik — only users with the `administrator` group in Pocket-ID can reach it. The service does not perform its own authentication.
+Sessions written to Redis by oauth2-proxy are read and displayed in the UI. Revoking a session takes effect immediately — the user's next request will be rejected by oauth2-proxy.
 
 ---
 
-## Environment variables
+## Prerequisites
 
-| Variable | Default | Description |
-|---|---|---|
-| `REDIS_URL` | `redis://redis:6379` | Connection URL for the shared Redis instance |
-| `SESSION_PREFIX` | `_oauth2_proxy-` | Key prefix oauth2-proxy uses for session tickets in Redis. Must match your oauth2-proxy config |
-| `CORS_ORIGINS` | `*` | Comma-separated list of allowed CORS origins for the API. Set this to your auth domain (e.g. `https://auth.example.duckdns.org`) in production |
-| `META_TTL` | `604800` | TTL in seconds applied to orphaned metadata keys. Should match the value used in `oauth2-proxy-authz` |
-
----
-
-## Redis key layout
-
-This service reads keys written by `oauth2-proxy-authz` and the raw session keys written by oauth2-proxy itself. It does not write any new keys except when revoking or blocking.
-
-| Key pattern | Type | Written by | Description |
-|---|---|---|---|
-| `_oauth2_proxy-<handle>` | string | oauth2-proxy | The live session ticket. Deleting this logs the user out |
-| `session_meta:<handle>` | hash | authz | User ID, email, IP, device, last-seen timestamp, note |
-| `session_destinations:<handle>` | hash | authz | Map of `destination → last_seen` for services visited |
-| `user_sessions:<user_id>` | set | authz | All known handles for a given user |
-| `blocklist:<user_id>` | string | session-admin | Exists if the user is blocked; no TTL (permanent until removed) |
+- [oauth2-proxy-authz](https://github.com/arm64buidz/oauth2-proxy-authz) — **required**
+- [oauth2-proxy](https://github.com/oauth2-proxy/oauth2-proxy)
+- [Pocket ID](https://github.com/pocket-id/pocket-id)
+- [Redis](https://redis.io/) — must be the same instance used by oauth2-proxy and oauth2-proxy-authz
+- [Traefik](https://traefik.io/)
 
 ---
 
-## API reference
+## Quick Start
 
-### `GET /api/sessions`
+### 1. Clone the repo
 
-Returns a list of all sessions with metadata, sorted by most recently active.
-
-**Response fields per session:**
-
-| Field | Description |
-|---|---|
-| `handle` | Session ticket handle (used as the ID in other endpoints) |
-| `user_id` | User identifier from the OIDC token |
-| `email` | User's email address |
-| `ip` | IP address at last request |
-| `device` | Browser and OS at last request (e.g. `Chrome / Windows`) |
-| `destinations` | Array of `{destination, last_seen}` — services the user has visited |
-| `note` | Admin-set note, if any |
-| `last_seen` | ISO 8601 timestamp of the most recent authorized request |
-| `ttl_seconds` | Remaining TTL on the session ticket |
-| `expires_in` | Human-readable TTL (e.g. `23h 14m`) |
-| `blocked` | `true` if this user is on the blocklist |
-
----
-
-### `GET /api/stats`
-
-Returns aggregate counts across all sessions.
-
-```json
-{
-  "total_tickets": 12,
-  "known_users": 10,
-  "blocked_users": 1,
-  "orphaned_meta": 2
-}
+```bash
+git clone https://github.com/arm64buidz/oauth2-proxy-session-admin.git
+cd oauth2-proxy-session-admin
 ```
 
-`orphaned_meta` is the number of metadata records whose underlying session ticket no longer exists in Redis (the session has expired or been revoked but the authz cleanup hasn't run yet).
+### 2. Configure your environment
 
----
-
-### `DELETE /api/sessions/{handle}`
-
-Revokes a session immediately by deleting the session ticket and all associated metadata from Redis. The user will be logged out on their next request.
-
----
-
-### `POST /api/sessions/{handle}/block`
-
-Adds the user associated with this session to the Redis blocklist. The block is permanent — it does not expire. The user will receive a `403 Forbidden` response on their next authorized request (within `BLOCKLIST_CACHE_TTL` seconds of the block being set).
-
----
-
-### `DELETE /api/sessions/{handle}/block`
-
-Removes the user associated with this session from the blocklist.
-
----
-
-### `POST /api/sessions/{handle}/note`
-
-Sets an administrative note on a session. Accepts a JSON body:
-
-```json
-{ "note": "Investigated 2026-06-25 — confirmed legit" }
+```bash
+cp .env.example .env
 ```
 
-Notes are capped at 500 characters and persist until the session metadata is deleted.
+| Variable          | Description                                                            | Example                             |
+|-------------------|------------------------------------------------------------------------|-------------------------------------|
+| `REDIS_URL`       | Redis connection string — must match oauth2-proxy's Redis instance     | `redis://oauth2-proxy-redis:6379`   |
+| `SESSION_PREFIX`  | Key prefix oauth2-proxy uses when writing sessions to Redis            | `_oauth2_proxy-`                    |
+| `CORS_ORIGINS`    | Allowed CORS origin — should match your Pocket ID / auth subdomain URL | `https://auth.example.duckdns.org`  |
+
+### 3. Start the stack
+
+Ensure `oauth2-proxy-authz` and Redis are healthy first. The example `docker-compose.yaml` handles this with `depends_on`.
+
+```bash
+docker compose up -d
+```
 
 ---
 
-### `GET /admin-portal`
+## Traefik Integration
 
-Serves the web UI (`index.html`). This is the route Traefik points browsers to.
-
-### `GET /healthz`
-
-Health check endpoint. Returns `{"status": "ok"}` if Redis is reachable. Used by container orchestration.
-
----
-
-## Docker
+The session admin service runs on port `8080` and is served under the same `auth.` subdomain as Pocket ID. Traefik routes to it by path prefix at a higher priority than the Pocket ID catch-all router.
 
 ```yaml
-session-admin:
-  image: arm64buidz/oauth2-proxy-session-admin:2026.6
-  environment:
-    - REDIS_URL=redis://oauth2-proxy-redis:6379
-    - SESSION_PREFIX=_oauth2_proxy-
-    - CORS_ORIGINS=https://auth.example.duckdns.org
-  networks:
-    - proxy-auth
-  depends_on:
-    - oauth2-proxy-redis
-  restart: unless-stopped
+http:
+  routers:
+    session_admin_router:
+      rule: "Host(`auth.example.duckdns.org`) && (PathPrefix(`/admin-portal`) || PathPrefix(`/api/sessions`) || PathPrefix(`/api/stats`))"
+      service: session_admin_service
+      priority: 250
+      middlewares:
+        - oauth2-auth         # must be authenticated
+        - authz-group-admin   # must be in 'administrator' group
+      tls:
+        certResolver: duckdnsresolver
+
+  services:
+    session_admin_service:
+      loadBalancer:
+        servers:
+          - url: http://session-admin:8080
 ```
 
-The service exposes port `8080` internally. Traefik handles TLS termination and access control — this service does not need to be published directly.
-
-### Traefik routing example
-
-The admin portal routes require two middlewares: one for authentication (oauth2-proxy) and one for group-based authorization (authz). The higher priority ensures these routes are matched before the catch-all pocket-id router.
-
-```yaml
-routers:
-  session_admin_router:
-    rule: "Host(`auth.example.duckdns.org`) && (PathPrefix(`/admin-portal`) || PathPrefix(`/api/sessions`) || PathPrefix(`/api/stats`))"
-    service: session_admin_service
-    priority: 250
-    middlewares:
-      - oauth2-auth
-      - authz-group-admin
-    entryPoints:
-      - https
-    tls:
-      certResolver: duckdnsresolver
-
-services:
-  session_admin_service:
-    loadBalancer:
-      servers:
-        - url: http://session-admin:8080
-```
+See `example-traefik.yaml` for the full working configuration including the oauth2 callback router and certificate resolver setup.
 
 ---
 
-## Related projects
+## Available Paths
 
-- **[oauth2-proxy-authz](https://github.com/arm64buidz/oauth2-proxy-authz)** — companion service that writes the session metadata this dashboard reads, and enforces group-based access control
-- **[oauth2-proxy](https://github.com/oauth2-proxy/oauth2-proxy)** — the authentication layer this service extends
-- **[Pocket-ID](https://github.com/pocket-id/pocket-id)** — the OIDC identity provider used in the reference stack
+| Path               | Description                        |
+|--------------------|------------------------------------|
+| `/admin-portal`    | Web UI                             |
+| `/api/sessions`    | REST API — list/revoke sessions    |
+| `/api/stats`       | REST API — session statistics      |
 
-For a full working example including Traefik config, docker-compose, and .env template, see the reference stack repository.
+All paths require authentication and membership in the `administrator` group.
+
+---
+
+## Service Ports
+
+| Service                      | Port   |
+|------------------------------|--------|
+| Pocket ID                    | `1411` |
+| oauth2-proxy                 | `4180` |
+| oauth2-proxy-authz           | `8080` |
+| oauth2-proxy-session-admin   | `8080` |
+
+---
+
+## Related Projects
+
+- [oauth2-proxy-authz](https://github.com/arm64buidz/oauth2-proxy-authz) — group-based authorization sidecar (**required**)
+- [oauth2-proxy](https://github.com/oauth2-proxy/oauth2-proxy)
+- [Pocket ID](https://github.com/pocket-id/pocket-id)
+
+---
+
+## License
+
+MIT
